@@ -1,6 +1,6 @@
 {
-    "publications_count": 100000,
-    "subscriptions_count": 100000,
+    "publications_count": 10000000,
+    "subscriptions_count": 10000000,
     "schema":
     {
         "company": {
@@ -27,6 +27,6 @@
             "type": "date",
             "interval": ["01.01.2000", "01.01.2030"],
             "occurence_percentage": 1 
+          }
         }
     }
-}

@@ -21,7 +21,7 @@ settings_t parse_args(int argc, char **argv) noexcept
     auto cli = lyra::cli() | lyra::help(show_help) | lyra::opt(settings.threads_count, "threads")["--threads"]("number of threads") |
                lyra::opt(settings.schema_path, "schema")["--schema"]("path to schema file") |
                lyra::opt(logging_level, "trace|debug|info|warn|err|critical|off")["--log"]("log level")
-                   .choices("trace ", "debug", "info", "warn", "err", "critical", "off");
+                   .choices("trace", "debug", "info", "warn", "err", "critical", "off");
 
     auto result = cli.parse({argc, argv});
     if (!result)
@@ -52,20 +52,28 @@ settings_t parse_args(int argc, char **argv) noexcept
 nlohmann::json load_schema(settings_t &settings)
 {
     std::ifstream raw_schema(settings.schema_path, std::fstream::binary | std::fstream::ate);
-    
+
     if (!raw_schema.is_open())
         throw std::runtime_error("falied to open schema file");
-    
-    auto file_size = raw_schema.tellg();
+
+    auto file_size = static_cast<std::int32_t>(raw_schema.tellg());
 
     if (file_size <= 0)
         throw std::runtime_error("get schema size failed");
 
-    std::vector<char> data(file_size);
-    raw_schema.read(data.data(), data.size());
+    raw_schema.seekg(0, std::fstream::beg);
 
-    // todo: validate schema structure?
-    nlohmann::json schema(data.data());
+    std::vector<char> data(file_size + 1);
+    raw_schema.read(data.data(), file_size);
+    data[file_size] = '\0';
+
+    if (!raw_schema)
+    {
+        throw std::runtime_error("failed to read schema");
+    }
+
+    auto schema = nlohmann::json::parse(data.data());
+    spdlog::info("schema loaded, {} bytes", data.size());
     return schema;
 }
 
@@ -85,7 +93,14 @@ int main(int argc, char **argv)
         auto schema = load_schema(settings);
 
         datagen generator(settings, std::move(schema));
+
+        auto t1 = std::chrono::high_resolution_clock::now();
         generator.run();
+        auto t2 = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        spdlog::info("data generation duration {} ms", duration);
+
+
     }
     catch (std::exception &e)
     {

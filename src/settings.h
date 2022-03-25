@@ -18,7 +18,6 @@ inline void settings_t::set_log_level(std::string_view new_value)
 {
     if (new_value.empty())
     {
-        log_level = spdlog::level::debug;
         return;
     }
 
