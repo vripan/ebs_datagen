@@ -5,6 +5,9 @@
 #include <random>
 #include <mutex>
 
+using namespace std;
+using namespace nlohmann;
+
 datagen::datagen(settings_t &settings, nlohmann::json &&schema)
     : settings(settings)
     , schema(std::move(schema))
@@ -24,9 +27,9 @@ datagen::task_id datagen::get_task()
     if (task < 0)
         return task_id::stop;
 
-    if (task < (int)publications_count)
-        return task_id::gen_pub;
-    return task_id::gen_sub;
+    if (task < (int)subscriptions_count)
+        return task_id::gen_sub;
+    return task_id::gen_pub;
 }
 
 void datagen::worker_default_action(unsigned int id)
@@ -62,9 +65,54 @@ void datagen::worker_default_action(unsigned int id)
     }
 }
 
-void datagen::worker_publication_action(unsigned int id, std::ofstream &fout)
+template<typename Iter, typename RandomGenerator>
+Iter select_randomly(Iter start, Iter end, RandomGenerator &g)
 {
-    auto output = R"JSON({"publication" : "this"})JSON"_json;
+    std::uniform_int_distribution<> dis(0, std::distance(start, end) - 1);
+    std::advance(start, dis(g));
+    return start;
+}
+
+template<typename Iter>
+Iter select_randomly(Iter start, Iter end)
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    return select_randomly(start, end, gen);
+}
+
+double select_randomly(double l1, double l2)
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    const std::uniform_real_distribution<> distr(l1, l2);
+    return distr(gen);
+}
+
+json generate_type(json specification)
+{
+    auto type = specification["type"].get<string>();
+    if (type == "string" || type == "date")
+    {
+        auto values = specification["values"].items();
+        return select_randomly(values.begin(), values.end()).value();
+    }
+    if (type == "double")
+    {
+        auto interval = specification["interval"].get<vector<double>>();
+        return select_randomly(interval[0], interval[1]);
+    }
+    throw std::exception("schema type not found");
+}
+
+void datagen::worker_publication_action(unsigned int /*id*/, std::ofstream &fout)
+{
+    json output;
+
+    for (auto &[name, object] : schema["schema"].items())
+    {
+        output[name] = generate_type(object);
+    }
 
     fout << output.dump(2) << ",\n";
 }
