@@ -3,10 +3,125 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/stopwatch.h>
 #include <random>
+#include <string>
 #include <mutex>
 
 using namespace std;
 using namespace nlohmann;
+
+template<typename Iter, typename RandomGenerator>
+Iter select_randomly(Iter start, Iter end, RandomGenerator &g)
+{
+    std::uniform_int_distribution<> dis(0, std::distance(start, end) - 1);
+    std::advance(start, dis(g));
+    return start;
+}
+
+template<typename Iter>
+Iter select_randomly(Iter start, Iter end)
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    return select_randomly(start, end, gen);
+}
+
+double select_randomly(double l1, double l2)
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    const std::uniform_real_distribution<> distr(l1, l2);
+    return distr(gen);
+}
+
+
+SubscriptionManager::SubscriptionManager(nlohmann::json &schema, int subscriptions_count)
+{
+    for (auto &[name, object] : schema["schema"].items())
+    {
+        auto type = object["type"].get<string>();
+
+        sub_fields[name].occurence_left = subscriptions_count;
+
+        if (object.contains("occurence_percentage"))
+            sub_fields[name].occurence_left = std::ceil(object["occurence_percentage"].get<double>() * subscriptions_count);
+        else
+            sub_fields[name].occurence_left = subscriptions_count;
+
+        if (object.contains("equal_frequency"))
+            sub_fields[name].equal_left = std::ceil(object["equal_frequency"].get<double>() * sub_fields[name].occurence_left);
+
+        if (type == "string")
+        {
+            sub_fields[name].type = SubFieldType::STRING;
+            sub_fields[name].values = new auto(object["values"].get<std::vector<std::string>>());
+        }
+        else if (type == "date")
+        {
+            sub_fields[name].type = SubFieldType::DATE;
+            sub_fields[name].values = new auto(object["values"].get<std::vector<std::string>>());
+        }
+        else if (type == "double")
+        {
+            sub_fields[name].type = SubFieldType::DOUBLE;
+            sub_fields[name].interval = new auto(object["interval"].get<vector<double>>());
+        }
+        else
+            throw std::exception("schema type not found");
+    }
+}
+
+std::string SubscriptionManager::generateField(SubField &field)
+{
+    std::string op = "";
+    {
+        // ----- START LOCK ----- 
+        std::lock_guard<std::mutex> __guard(field._mutex);
+
+        if (!field.occurence_left)
+            return "";
+        --field.occurence_left;
+
+        // get operator
+        if (field.equal_left)
+        {
+            op = "=";
+            --field.equal_left;
+        }
+        // ----- END LOCK ----- 
+    }
+
+    switch (field.type)
+    {
+    case SubFieldType::DOUBLE: {
+        if (op == "")
+            op = OPERATORS::numbers_ops[std::floor(select_randomly(0, OPERATORS::numbers_ops.size()))];
+        return op + ", " + std::to_string(select_randomly(field.interval->at(0), field.interval->at(1)));
+        // break;
+    }
+    case SubFieldType::STRING:
+        // TODO: separate ops for date?
+    case SubFieldType::DATE: {
+        if (op == "")
+            op = OPERATORS::strings_ops[std::floor(select_randomly(0, OPERATORS::strings_ops.size()))];
+        return op + ", " + field.values->at(std::floor(select_randomly(0, field.values->size())));
+        // break;
+    }
+    default:
+        throw std::exception("invalid field type!");
+    }
+}
+
+nlohmann::json SubscriptionManager::generateSub()
+{
+    json out;
+    for (auto &[key, value] : sub_fields)
+    {
+        auto generatedField = generateField(value);
+        if (generatedField != "")
+            out[key] = generatedField; 
+    }
+    return out;
+}
 
 datagen::datagen(settings_t &settings, nlohmann::json &&schema)
     : settings(settings)
@@ -16,6 +131,8 @@ datagen::datagen(settings_t &settings, nlohmann::json &&schema)
 {
     publications_count = this->schema["publications_count"].get<std::uint32_t>();
     subscriptions_count = this->schema["subscriptions_count"].get<std::uint32_t>();
+
+    this->subsManager = new SubscriptionManager(this->schema, subscriptions_count);
 
     spdlog::info("input size: {} publications and {} subscriptions", publications_count, subscriptions_count);
 }
@@ -65,30 +182,6 @@ void datagen::worker_default_action(unsigned int id)
     }
 }
 
-template<typename Iter, typename RandomGenerator>
-Iter select_randomly(Iter start, Iter end, RandomGenerator &g)
-{
-    std::uniform_int_distribution<> dis(0, std::distance(start, end) - 1);
-    std::advance(start, dis(g));
-    return start;
-}
-
-template<typename Iter>
-Iter select_randomly(Iter start, Iter end)
-{
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    return select_randomly(start, end, gen);
-}
-
-double select_randomly(double l1, double l2)
-{
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    const std::uniform_real_distribution<> distr(l1, l2);
-    return distr(gen);
-}
-
 json generate_type(json specification)
 {
     auto type = specification["type"].get<string>();
@@ -119,7 +212,8 @@ void datagen::worker_publication_action(unsigned int /*id*/, std::ofstream &fout
 
 void datagen::worker_subscription_action(unsigned int id, std::ofstream &fout)
 {
-    auto output = R"JSON({"subscription" : "this"})JSON"_json;
+    //auto output = R"JSON({"subscription" : "this"})JSON"_json;
+    auto output = this->subsManager->generateSub();
 
     fout << output.dump(2) << ",\n";
 }

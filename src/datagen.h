@@ -14,6 +14,42 @@
 
 using namespace std::chrono_literals;
 
+static class OPERATORS
+{
+public:
+    static const inline std::array<std::string, 6> numbers_ops = {{"!=", "=", "<=", ">=", ">", "<"}};
+    static const inline std::array<std::string, 2> strings_ops = {{"!=", "="}};
+};
+
+class SubscriptionManager
+{
+    enum class SubFieldType
+    {
+        DOUBLE,
+        DATE,
+        STRING
+    };
+    struct SubField
+    {
+        SubFieldType type;
+        union
+        {
+            std::vector<double> *interval;
+            std::vector<std::string> *values;
+        };
+        int occurence_left;
+        int equal_left;
+        std::mutex _mutex;
+    };
+
+    std::map<std::string, SubField> sub_fields;
+
+public:
+    SubscriptionManager(nlohmann::json &schema, int subscriptions_count);
+    std::string generateField(SubField &field);
+    nlohmann::json generateSub();
+};
+
 class datagen
 {
 public:
@@ -52,6 +88,8 @@ private:
 
     std::mutex fout_mtx;
     std::ofstream fout;
+
+    SubscriptionManager *subsManager;
 
     void worker_default_action(unsigned int id);
     void worker_publication_action(unsigned int id, std::ofstream& fout);
