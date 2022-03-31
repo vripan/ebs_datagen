@@ -7,6 +7,7 @@
 #include <functional>
 #include <chrono>
 #include <fstream>
+#include <random>
 
 #include <nlohmann/json.hpp>
 
@@ -14,7 +15,7 @@
 
 using namespace std::chrono_literals;
 
-static class OPERATORS
+class OPERATORS
 {
 public:
     static const inline std::array<std::string, 6> numbers_ops = {{"!=", "=", "<=", ">=", ">", "<"}};
@@ -46,8 +47,8 @@ class SubscriptionManager
 
 public:
     SubscriptionManager(nlohmann::json &schema, int subscriptions_count);
-    std::string generateField(SubField &field);
-    nlohmann::json generateSub();
+    std::string generateField(std::mt19937 &gen, SubField &field);
+    nlohmann::json generateSub(std::mt19937 &gen);
 };
 
 class datagen
@@ -92,8 +93,8 @@ private:
     SubscriptionManager *subsManager;
 
     void worker_default_action(unsigned int id);
-    void worker_publication_action(unsigned int id, std::ofstream& fout);
-    void worker_subscription_action(unsigned int id, std::ofstream& fout);
+    void worker_publication_action(unsigned int id, std::ofstream &fout, std::mt19937 &gen);
+    void worker_subscription_action(unsigned int id, std::ofstream &fout, std::mt19937 &gen);
     
     void spawn_threads();
     void end_threads();
