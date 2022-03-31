@@ -29,4 +29,3 @@ file(GLOB_RECURSE SRC_FILES
            
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 
-print_all_variables()

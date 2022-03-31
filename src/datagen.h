@@ -87,14 +87,16 @@ private:
     std::uint32_t publications_count;
     std::uint32_t subscriptions_count;
 
-    std::mutex fout_mtx;
-    std::ofstream fout;
+    std::mutex fout_subs_mtx;
+    std::ofstream fout_subs;
+    std::mutex fout_pubs_mtx;
+    std::ofstream fout_pubs;
 
     SubscriptionManager *subsManager;
 
     void worker_default_action(unsigned int id);
-    void worker_publication_action(unsigned int id, std::ofstream &fout, std::mt19937 &gen);
-    void worker_subscription_action(unsigned int id, std::ofstream &fout, std::mt19937 &gen);
+    void worker_publication_action(unsigned int id, std::mt19937 &gen, std::stringstream &sout);
+    void worker_subscription_action(unsigned int id, std::mt19937 &gen, std::stringstream &sout);
     
     void spawn_threads();
     void end_threads();

@@ -126,7 +126,8 @@ datagen::datagen(settings_t &settings, nlohmann::json &&schema)
     : settings(settings)
     , schema(std::move(schema))
     , tasks_count({0})
-    , fout("data.json")
+    , fout_subs("data_subs.json")
+    , fout_pubs("data_pubs.json")
 {
     publications_count = this->schema["publications_count"].get<std::uint32_t>();
     subscriptions_count = this->schema["subscriptions_count"].get<std::uint32_t>();
@@ -152,12 +153,9 @@ void datagen::worker_default_action(unsigned int id)
 {
     auto &task_counter = tasks_executed[id];
 
-    std::string filename = "data_" + std::to_string(id) + ".json";
-    std::ofstream fout(filename);
-    fout << "[\n";
-
     std::random_device rd;
     std::mt19937 gen(rd());
+    std::stringstream sout;
 
     while (true)
     {
@@ -165,19 +163,17 @@ void datagen::worker_default_action(unsigned int id)
         switch (task)
         {
         case task_id::stop: {
-            fout << "{}\n]\n";
-
             double total_tasks = publications_count + subscriptions_count;
-            spdlog::info("tid /{} executed {} tasks ({:.3}%)", id, task_counter, ((double)task_counter / total_tasks * 100.0));
+            spdlog::debug("tid /{} executed {} tasks ({:.3}%)", id, task_counter, ((double)task_counter / total_tasks * 100.0));
 
             spdlog::debug("thread exit /{}", id);
             return;
         }
         case task_id::gen_sub:
-            worker_subscription_action(id, fout, gen);
+            worker_subscription_action(id, gen, sout);
             break;
         case task_id::gen_pub:
-            worker_publication_action(id, fout, gen);
+            worker_publication_action(id, gen, sout);
             break;
         }
         task_counter += 1;
@@ -200,7 +196,7 @@ json generate_type(json specification, std::mt19937 &gen)
     throw std::exception("schema type not found");
 }
 
-void datagen::worker_publication_action(unsigned int /*id*/, std::ofstream &fout, std::mt19937 &gen)
+void datagen::worker_publication_action(unsigned int /*id*/, std::mt19937 &gen, std::stringstream &sout)
 {
     json output;
 
@@ -209,14 +205,26 @@ void datagen::worker_publication_action(unsigned int /*id*/, std::ofstream &fout
         output[name] = generate_type(object, gen);
     }
 
-    fout << output.dump(2) << ",\n";
+    sout.str("");
+    sout << output.dump(2) << ",\n";
+
+    {
+        std::lock_guard g(fout_pubs_mtx);
+        fout_pubs << sout.str();
+    }
 }
 
-void datagen::worker_subscription_action(unsigned int id, std::ofstream &fout, std::mt19937 &gen)
+void datagen::worker_subscription_action(unsigned int id, std::mt19937 &gen, std::stringstream& sout)
 {
     auto output = this->subsManager->generateSub(gen);
 
-    fout << output.dump(2) << ",\n";
+    sout.str("");
+    sout << output.dump(2) << ",\n";
+
+    {
+        std::lock_guard g(fout_subs_mtx);
+        fout_subs << sout.str();
+    }
 }
 
 void datagen::spawn_threads()
@@ -244,6 +252,12 @@ void datagen::run()
 {
     tasks_count = publications_count + subscriptions_count;
 
+    fout_pubs << "[\n";
+    fout_subs << "[\n";
+
     spawn_threads();
     end_threads();
+
+    fout_pubs << "{}\n]\n";
+    fout_subs << "{}\n]\n";
 }

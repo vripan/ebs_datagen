@@ -1,6 +1,6 @@
 {
-    "publications_count": 1000000,
-    "subscriptions_count": 1000000,
+    "publications_count": 10,
+    "subscriptions_count": 10,
     "schema":
     {
         "company": {
@@ -20,7 +20,7 @@
         "variation":{
             "type": "double",
             "interval": [10, 100],
-            "occurence_percentage": 0.5,
+            "occurence_percentage": 0.1,
             "equal_frequency": 0.7 
         },
         "date": {
